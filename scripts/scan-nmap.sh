@@ -21,13 +21,13 @@ fi
 # -sn: Ping Scan (disable port scan)
 # -O: OS detection (requires root/sudo, may fail on some hosts)
 # --osscan-guess: Be more aggressive with OS detection
+# --disable-arp-ping: CRITICAL for Docker bridge mode - forces L3 scanning
 # -PS80,443: TCP SYN ping on common ports (helps if ICMP is blocked)
 # -oX -: Output XML
 
-# Note: We removed --disable-arp-ping.
-# If on the same subnet (L2), ARP is best.
-# If on different subnet (L3, or Docker bridge), Nmap automatically uses TCP/ICMP.
+# Note: --disable-arp-ping is REQUIRED in Docker bridge mode.
+# Without it, Nmap gets confused and reports all IPs as "up" (false positives).
 
 # Try OS detection, but don't fail if it doesn't work
-nmap -sn -O --osscan-guess -PS80,443 "${CIDR}" -oX - 2>/dev/null | node lib/parse-nmap.js || \
-  nmap -sn -PS80,443 "${CIDR}" -oX - | node lib/parse-nmap.js
+nmap -sn -O --osscan-guess --disable-arp-ping -PS80,443 "${CIDR}" -oX - 2>/dev/null | node lib/parse-nmap.js || \
+  nmap -sn --disable-arp-ping -PS80,443 "${CIDR}" -oX - | node lib/parse-nmap.js
