@@ -73,11 +73,15 @@ async function scanLoop() {
     const allObs = [];
     for (const t of config.targets) {
         try {
-            // Default to arp-scan if not specified, but support "nmap"
+            // Support multiple scanner types: arp-scan, nmap, tcp, ping
             const scannerType = t.scanner || "arp-scan";
             let script = "scripts/scan-arp.sh";
             if (scannerType === "nmap") {
                 script = "scripts/scan-nmap.sh";
+            } else if (scannerType === "tcp") {
+                script = "scripts/scan-tcp.sh";
+            } else if (scannerType === "ping") {
+                script = "scripts/scan-ping.ps1";
             }
 
             const lines = await runWorker(script, [t.iface, t.cidr]);
