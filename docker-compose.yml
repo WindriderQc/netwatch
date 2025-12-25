@@ -2,8 +2,11 @@ services:
   netwatch:
     build: .
     container_name: netwatch
-    # network_mode: host REMOVED because it breaks localhost access on Windows Docker Desktop
-    # Since we are using nmap (L3) now, bridge mode works fine.
+    # Network Mode:
+    # - "host": Recommended for Linux. Allows scanning the host network (L2) to get MAC addresses.
+    # - "bridge": Default. Works for L3 scanning (IPs only) or if you only need to scan other containers.
+    #             Windows/Mac users typically must use bridge mode due to Docker desktop limitations.
+    # network_mode: host
     ports:
       - "8787:8787"
     restart: unless-stopped
