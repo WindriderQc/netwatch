@@ -2,7 +2,7 @@ import express from "express";
 import { WebSocketServer } from "ws";
 import { loadConfig } from "./lib/store.js";
 import { runWorker } from "./lib/runner.js";
-import { mergeObservations } from "./lib/normalize.js";
+import { mergeObservations, updateIpHistory } from "./lib/normalize.js";
 import { diffSnapshots } from "./lib/diff.js";
 import { StateStore } from "./lib/store.js";
 import fs from "fs";
@@ -51,7 +51,10 @@ app.post("/api/device", async (req, res) => {
 });
 
 app.get("/api/events", async (req, res) => {
-    const limit = parseInt(req.query.limit) || 100;
+    const parsedLimit = parseInt(req.query.limit, 10);
+    const limitOrDefault = Number.isNaN(parsedLimit) ? 100 : parsedLimit;
+    // Cap limit between 1 and 1000 to prevent resource exhaustion
+    const limit = Math.min(Math.max(limitOrDefault, 1), 1000);
     const events = await store.readRecentEvents(limit);
     res.json({ events });
 });
@@ -106,16 +109,11 @@ async function scanLoop() {
         // Merge into lastSnapshot
         const prev = lastSnapshot.devices[key] || {};
         const isNewDevice = !prev.firstSeen;
-        const ipChanged = prev.ip && prev.ip !== o.ip;
+        // Only track IP change if both IPs exist and are actually different
+        const ipChanged = prev.ip && o.ip && prev.ip !== o.ip;
 
-        // Update IP history
-        const ipHistory = prev.ipHistory || [];
-        if (o.ip && !ipHistory.find(h => h.ip === o.ip)) {
-            ipHistory.push({ ip: o.ip, firstSeen: ts, lastSeen: ts });
-        } else if (o.ip) {
-            const entry = ipHistory.find(h => h.ip === o.ip);
-            if (entry) entry.lastSeen = ts;
-        }
+        // Update IP history using the shared function from normalize.js
+        const ipHistory = updateIpHistory(prev.ipHistory || [], o.ip, ts);
 
         lastSnapshot.devices[key] = {
             ...prev,
@@ -129,15 +127,17 @@ async function scanLoop() {
             firstSeen: prev.firstSeen || ts,
             status: "online",
             ipHistory,
-            // Preserve hardware info
-            hardware: prev.hardware || {},
+            // Hardware info: inventory properties override previous properties
+            hardware: {
+                ...(prev.hardware || {}),
+                ...(inventory[key]?.hardware || {})
+            },
             // Explicitly re-apply persistent inventory
             purpose: inventory[key]?.purpose || prev.purpose || "",
             alias: inventory[key]?.alias || prev.alias || "",
             type: inventory[key]?.type || prev.type || "",
             location: inventory[key]?.location || prev.location || "",
-            notes: inventory[key]?.notes || prev.notes || "",
-            ...(inventory[key]?.hardware && { hardware: { ...prev.hardware, ...inventory[key].hardware } })
+            notes: inventory[key]?.notes || prev.notes || ""
         };
 
         // Track new devices and IP changes for events
