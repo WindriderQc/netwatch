@@ -51,10 +51,10 @@ app.post("/api/device", async (req, res) => {
 });
 
 app.get("/api/events", async (req, res) => {
-    const rawLimit = parseInt(req.query.limit, 10);
-    const validatedLimit = Number.isNaN(rawLimit) ? 100 : rawLimit;
+    const parsedLimit = parseInt(req.query.limit, 10);
+    const limitOrDefault = Number.isNaN(parsedLimit) ? 100 : parsedLimit;
     // Cap limit between 1 and 1000 to prevent resource exhaustion
-    const limit = Math.min(Math.max(validatedLimit, 1), 1000);
+    const limit = Math.min(Math.max(limitOrDefault, 1), 1000);
     const events = await store.readRecentEvents(limit);
     res.json({ events });
 });
@@ -127,7 +127,7 @@ async function scanLoop() {
             firstSeen: prev.firstSeen || ts,
             status: "online",
             ipHistory,
-            // Preserve hardware info, with explicit properties taking precedence
+            // Hardware info: inventory properties override previous properties
             hardware: {
                 ...(prev.hardware || {}),
                 ...(inventory[key]?.hardware || {})
