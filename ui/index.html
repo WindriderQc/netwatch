@@ -1,0 +1,376 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>NetWatch</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 16px;
+            background: #f0f2f5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 1em;
+        }
+
+        td,
+        th {
+            border-bottom: 1px solid #ddd;
+            padding: 12px 8px;
+            text-align: left;
+        }
+
+        th {
+            background: #f8f9fa;
+            color: #444;
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+            cursor: pointer;
+        }
+
+        .muted {
+            color: #888;
+            font-size: 0.9em;
+        }
+
+        .status-bar {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+
+        .status-conn {
+            background: #eee;
+            color: #666;
+        }
+
+        .status-conn.ok {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .status-conn.err {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .status-scan {
+            display: none;
+            background: #fff3e0;
+            color: #ef6c00;
+        }
+
+        .status-scan.active {
+            display: inline-block;
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            margin-right: 4px;
+        }
+
+        .tag-blue {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .tag-green {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal {
+            background: white;
+            padding: 24px;
+            border-radius: 8px;
+            width: 400px;
+            max-width: 90%;
+        }
+
+        .modal h3 {
+            margin-top: 0;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 4px;
+            font-weight: 500;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .actions {
+            text-align: right;
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-cancel {
+            background: #eee;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div style="display:flex; justify-content:space-between; align-items:center">
+            <h2>NetWatch</h2>
+            <div class="status-bar">
+                <label
+                    style="font-size:0.9em; display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none">
+                    <input type="checkbox" id="showOffline"> Show Offline
+                </label>
+                <div id="connStatus" class="status-badge status-conn">Connecting...</div>
+                <div id="scanStatus" class="status-badge status-scan">Scanning...</div>
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Device</th>
+                    <th>Details</th>
+                    <th>Network</th>
+                    <th>Last Seen</th>
+                </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+        </table>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal-overlay" id="editModal">
+        <div class="modal">
+            <h3>Edit Device</h3>
+            <div class="form-group">
+                <label>Alias (Name)</label>
+                <input type="text" id="editAlias" placeholder="e.g. Living Room TV">
+            </div>
+            <div class="form-group">
+                <label>Type</label>
+                <input type="text" id="editType" placeholder="e.g. Printer, Laptop">
+            </div>
+            <div class="form-group">
+                <label>Location/Notes</label>
+                <input type="text" id="editLoc" placeholder="e.g. Office">
+            </div>
+            <div class="actions">
+                <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+                <button class="btn-primary" onclick="saveDevice()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let snapshot = null;
+        let currentKey = null;
+        let showOffline = false;
+        const connEl = document.getElementById("connStatus");
+        const scanEl = document.getElementById("scanStatus");
+        const modal = document.getElementById("editModal");
+        const showOfflineCb = document.getElementById("showOffline");
+
+        showOfflineCb.onchange = (e) => {
+            showOffline = e.target.checked;
+            render();
+        };
+
+        function render() {
+            if (!snapshot) return;
+            const rows = document.getElementById("rows");
+            rows.innerHTML = "";
+
+            const devices = Object.values(snapshot.devices)
+                .filter(d => showOffline || d.status !== 'offline')
+                .sort((a, b) => {
+                    const ipA = (a.ip || "0.0.0.0").split('.').map(Number);
+                    const ipB = (b.ip || "0.0.0.0").split('.').map(Number);
+                    for (let i = 0; i < 4; i++) if (ipA[i] !== ipB[i]) return ipA[i] - ipB[i];
+                    return 0;
+                });
+
+            for (const d of devices) {
+                const tr = document.createElement("tr");
+                tr.onclick = () => openModal(d);
+
+                const primaryName = d.alias || d.hostname || d.vendor || d.mac || d.ip;
+                const secondaryName = d.alias ? (d.hostname || d.ip) : (d.hostname ? d.ip : "");
+
+                tr.innerHTML = `
+      <td>
+        <div style="display:flex; align-items:center; gap:8px">
+            <div style="width:8px; height:8px; border-radius:50%; background-color:${d.status === 'offline' ? '#ccc' : '#4caf50'}" title="${d.status}"></div>
+            <div>
+                <div style="font-weight:500">${primaryName}</div>
+                <div class="muted">${secondaryName}</div>
+            </div>
+        </div>
+      </td>
+      <td>
+        ${d.type ? `<span class="tag tag-blue">${d.type}</span>` : ""}
+        ${d.location ? `<span class="tag tag-green">${d.location}</span>` : ""}
+        ${d.vendor ? `<div class="muted small">${d.vendor}</div>` : ""}
+        ${d.httpTitle ? `<div class="muted small" style="font-style:italic">"${d.httpTitle}"</div>` : ""}
+      </td>
+      <td>
+        <div>${d.ip || ""}</div>
+        <div class="muted" style="font-family:monospace">${d.mac || ""}</div>
+      </td>
+      <td class="muted">
+        ${timeAgo(d.lastSeen)}
+      </td>
+    `;
+
+                if (d.status === 'offline') {
+                    tr.style.opacity = 0.5;
+                    tr.style.backgroundColor = "#f9f9f9";
+                } else if (Date.now() - d.lastSeen < 60000) {
+                    tr.style.backgroundColor = (Date.now() - d.lastSeen < 15000) ? "#e8f5e9" : "#fff";
+                }
+
+                rows.appendChild(tr);
+            }
+        }
+
+        function timeAgo(ts) {
+            const s = Math.floor((Date.now() - ts) / 1000);
+            if (s < 60) return "just now";
+            if (s < 3600) return Math.floor(s / 60) + "m ago";
+            return Math.floor(s / 3600) + "h ago";
+        }
+
+        function openModal(d) {
+            currentKey = d.key;
+            document.getElementById("editAlias").value = d.alias || "";
+            document.getElementById("editType").value = d.type || "";
+            document.getElementById("editLoc").value = d.location || "";
+            modal.style.display = "flex";
+        }
+
+        function closeModal() {
+            modal.style.display = "none";
+            currentKey = null;
+        }
+
+        async function saveDevice() {
+            if (!currentKey) return;
+            const body = {
+                key: currentKey,
+                alias: document.getElementById("editAlias").value,
+                type: document.getElementById("editType").value,
+                location: document.getElementById("editLoc").value
+            };
+
+            try {
+                await fetch("/api/device", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body)
+                });
+                closeModal();
+            } catch (e) {
+                alert("Failed to save: " + e.message);
+            }
+        }
+
+        function connect() {
+            const protocol = location.protocol === "https:" ? "wss://" : "ws://";
+            const ws = new WebSocket(protocol + location.host);
+
+            ws.onopen = () => {
+                connEl.textContent = "Connected";
+                connEl.className = "status-badge status-conn ok";
+            };
+
+            ws.onclose = () => {
+                connEl.textContent = "Disconnected";
+                connEl.className = "status-badge status-conn err";
+                setTimeout(connect, 2000);
+            };
+
+            ws.onmessage = (msg) => {
+                const m = JSON.parse(msg.data);
+                if (m.type === "snapshot") {
+                    snapshot = m.snapshot;
+                    // If we get a snapshot, scanning is effectively 'done' for that cycle, or we just update the view
+                    // But let's leave the 'Scanning...' indicator control to the explicit event
+                    scanEl.classList.remove("active");
+                    render();
+                } else if (m.type === "status") {
+                    if (m.status === "scanning") {
+                        scanEl.classList.add("active");
+                    } else {
+                        scanEl.classList.remove("active");
+                    }
+                }
+            };
+        }
+
+        connect();
+        modal.onclick = (e) => { if (e.target === modal) closeModal(); };
+    </script>
+</body>
+
+</html>

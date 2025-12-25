@@ -1,0 +1,16 @@
+services:
+  netwatch:
+    build: .
+    container_name: netwatch
+    # network_mode: host REMOVED because it breaks localhost access on Windows Docker Desktop
+    # Since we are using nmap (L3) now, bridge mode works fine.
+    ports:
+      - "8787:8787"
+    restart: unless-stopped
+    volumes:
+      - ./config.json:/app/config.json
+      - ./data:/app/data
+    # Grant capability for raw socket operations (required for nmap/arp-scan)
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
