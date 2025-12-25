@@ -50,6 +50,12 @@ app.post("/api/device", async (req, res) => {
     res.json({ ok: true });
 });
 
+app.get("/api/events", async (req, res) => {
+    const limit = parseInt(req.query.limit) || 100;
+    const events = await store.readRecentEvents(limit);
+    res.json({ events });
+});
+
 let isScanning = false;
 async function scanLoop() {
     if (isScanning) return;
@@ -89,6 +95,8 @@ async function scanLoop() {
 
     // Create a set of IPs found in THIS scan
     const foundKeys = new Set();
+    const newDevices = [];
+    const ipChanges = [];
 
     for (const o of allObs) {
         // Normalize key (mac or ip)
@@ -97,6 +105,18 @@ async function scanLoop() {
 
         // Merge into lastSnapshot
         const prev = lastSnapshot.devices[key] || {};
+        const isNewDevice = !prev.firstSeen;
+        const ipChanged = prev.ip && prev.ip !== o.ip;
+
+        // Update IP history
+        const ipHistory = prev.ipHistory || [];
+        if (o.ip && !ipHistory.find(h => h.ip === o.ip)) {
+            ipHistory.push({ ip: o.ip, firstSeen: ts, lastSeen: ts });
+        } else if (o.ip) {
+            const entry = ipHistory.find(h => h.ip === o.ip);
+            if (entry) entry.lastSeen = ts;
+        }
+
         lastSnapshot.devices[key] = {
             ...prev,
             ...o,
@@ -104,12 +124,29 @@ async function scanLoop() {
             mac: (o.mac || prev.mac || "").toLowerCase(),
             hostname: o.hostname || prev.hostname || "",
             vendor: o.vendor || prev.vendor || "",
+            os: o.os || prev.os || "",
             lastSeen: ts,
             firstSeen: prev.firstSeen || ts,
             status: "online",
+            ipHistory,
+            // Preserve hardware info
+            hardware: prev.hardware || {},
             // Explicitly re-apply persistent inventory
-            ...inventory[key]
+            purpose: inventory[key]?.purpose || prev.purpose || "",
+            alias: inventory[key]?.alias || prev.alias || "",
+            type: inventory[key]?.type || prev.type || "",
+            location: inventory[key]?.location || prev.location || "",
+            notes: inventory[key]?.notes || prev.notes || "",
+            ...(inventory[key]?.hardware && { hardware: { ...prev.hardware, ...inventory[key].hardware } })
         };
+
+        // Track new devices and IP changes for events
+        if (isNewDevice) {
+            newDevices.push({ key, device: lastSnapshot.devices[key] });
+        }
+        if (ipChanged) {
+            ipChanges.push({ key, oldIp: prev.ip, newIp: o.ip, device: lastSnapshot.devices[key] });
+        }
     }
 
     // 3) Mark missing devices as offline
@@ -119,16 +156,25 @@ async function scanLoop() {
         }
     }
 
-    // 4) Immediate Enrichment for NEW devices
-    const newDevices = allObs.filter(o =>
-        !lastSnapshot.devices[o.mac || `ip:${o.ip}`].firstSeen ||
-        lastSnapshot.devices[o.mac || `ip:${o.ip}`].firstSeen === ts
-    );
-    if (newDevices.length > 0) {
-        setTimeout(() => quickEnrich(newDevices), 100);
+    // 4) Generate events for new devices and IP changes
+    const events = [];
+    for (const { key, device } of newDevices) {
+        events.push({ type: "new_device", ts, key, device: { ip: device.ip, mac: device.mac, hostname: device.hostname } });
+    }
+    for (const { key, oldIp, newIp, device } of ipChanges) {
+        events.push({ type: "ip_change", ts, key, oldIp, newIp, device: { mac: device.mac, hostname: device.hostname } });
+    }
+    if (events.length > 0) {
+        await store.appendEvents(events);
+        broadcast({ type: "events", events });
     }
 
-    // 5) Store & Broadcast
+    // 5) Immediate Enrichment for NEW devices
+    if (newDevices.length > 0) {
+        setTimeout(() => quickEnrich(newDevices.map(nd => nd.device)), 100);
+    }
+
+    // 6) Store & Broadcast
     await store.writeSnapshot(lastSnapshot);
     broadcast({ type: "snapshot", snapshot: lastSnapshot });
     broadcast({ type: "status", status: "idle" });

@@ -178,6 +178,7 @@
         <div style="display:flex; justify-content:space-between; align-items:center">
             <h2>NetWatch</h2>
             <div class="status-bar">
+                <button class="btn-primary" onclick="openEventsModal()" style="margin-right: 12px;">View Events</button>
                 <label
                     style="font-size:0.9em; display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none">
                     <input type="checkbox" id="showOffline"> Show Offline
@@ -191,7 +192,7 @@
             <thead>
                 <tr>
                     <th>Device</th>
-                    <th>Details</th>
+                    <th>Purpose / Details</th>
                     <th>Network</th>
                     <th>Last Seen</th>
                 </tr>
@@ -209,16 +210,37 @@
                 <input type="text" id="editAlias" placeholder="e.g. Living Room TV">
             </div>
             <div class="form-group">
-                <label>Type</label>
-                <input type="text" id="editType" placeholder="e.g. Printer, Laptop">
+                <label>Purpose</label>
+                <input type="text" id="editPurpose" placeholder="e.g. Proxmox server, Node.js server, ESP32">
             </div>
             <div class="form-group">
-                <label>Location/Notes</label>
-                <input type="text" id="editLoc" placeholder="e.g. Office">
+                <label>Type</label>
+                <input type="text" id="editType" placeholder="e.g. Printer, Laptop, Server">
+            </div>
+            <div class="form-group">
+                <label>Location</label>
+                <input type="text" id="editLoc" placeholder="e.g. Office, Living Room">
+            </div>
+            <div class="form-group">
+                <label>Notes</label>
+                <input type="text" id="editNotes" placeholder="Additional notes">
             </div>
             <div class="actions">
                 <button class="btn-cancel" onclick="closeModal()">Cancel</button>
                 <button class="btn-primary" onclick="saveDevice()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Events Panel -->
+    <div class="modal-overlay" id="eventsModal">
+        <div class="modal" style="width: 600px; max-width: 90%;">
+            <h3>Recent Events</h3>
+            <div id="eventsList" style="max-height: 400px; overflow-y: auto; margin: 16px 0;">
+                <p class="muted">Loading events...</p>
+            </div>
+            <div class="actions">
+                <button class="btn-cancel" onclick="closeEventsModal()">Close</button>
             </div>
         </div>
     </div>
@@ -269,14 +291,17 @@
         </div>
       </td>
       <td>
+        ${d.purpose ? `<div style="font-weight:500; color:#1976d2; margin-bottom:4px">${d.purpose}</div>` : ""}
         ${d.type ? `<span class="tag tag-blue">${d.type}</span>` : ""}
         ${d.location ? `<span class="tag tag-green">${d.location}</span>` : ""}
+        ${d.os ? `<div class="muted small" style="margin-top:4px">OS: ${d.os}</div>` : ""}
         ${d.vendor ? `<div class="muted small">${d.vendor}</div>` : ""}
         ${d.httpTitle ? `<div class="muted small" style="font-style:italic">"${d.httpTitle}"</div>` : ""}
       </td>
       <td>
         <div>${d.ip || ""}</div>
         <div class="muted" style="font-family:monospace">${d.mac || ""}</div>
+        ${d.ipHistory && d.ipHistory.length > 1 ? `<div class="muted small" style="margin-top:4px" title="IP History">${d.ipHistory.length} IPs tracked</div>` : ""}
       </td>
       <td class="muted">
         ${timeAgo(d.lastSeen)}
@@ -304,8 +329,10 @@
         function openModal(d) {
             currentKey = d.key;
             document.getElementById("editAlias").value = d.alias || "";
+            document.getElementById("editPurpose").value = d.purpose || "";
             document.getElementById("editType").value = d.type || "";
             document.getElementById("editLoc").value = d.location || "";
+            document.getElementById("editNotes").value = d.notes || "";
             modal.style.display = "flex";
         }
 
@@ -319,8 +346,10 @@
             const body = {
                 key: currentKey,
                 alias: document.getElementById("editAlias").value,
+                purpose: document.getElementById("editPurpose").value,
                 type: document.getElementById("editType").value,
-                location: document.getElementById("editLoc").value
+                location: document.getElementById("editLoc").value,
+                notes: document.getElementById("editNotes").value
             };
 
             try {
@@ -333,6 +362,73 @@
             } catch (e) {
                 alert("Failed to save: " + e.message);
             }
+        }
+
+        async function openEventsModal() {
+            const eventsModal = document.getElementById("eventsModal");
+            const eventsList = document.getElementById("eventsList");
+            eventsModal.style.display = "flex";
+            
+            eventsList.innerHTML = '<p class="muted">Loading events...</p>';
+            
+            try {
+                const response = await fetch("/api/events?limit=50");
+                const data = await response.json();
+                const events = data.events || [];
+                
+                if (events.length === 0) {
+                    eventsList.innerHTML = '<p class="muted">No events recorded yet.</p>';
+                    return;
+                }
+                
+                let html = '';
+                for (const evt of events.reverse()) {
+                    const date = new Date(evt.ts).toLocaleString();
+                    let icon = '•';
+                    let color = '#666';
+                    let description = '';
+                    
+                    if (evt.type === 'new_device') {
+                        icon = '🆕';
+                        color = '#4caf50';
+                        description = `New device discovered: ${evt.device.hostname || evt.device.ip || evt.device.mac}`;
+                    } else if (evt.type === 'ip_change') {
+                        icon = '🔄';
+                        color = '#ff9800';
+                        description = `IP changed from ${evt.oldIp} to ${evt.newIp} (${evt.device.hostname || evt.device.mac})`;
+                    } else if (evt.type === 'join') {
+                        icon = '📶';
+                        color = '#2196f3';
+                        description = `Device joined: ${evt.device.hostname || evt.device.ip || evt.device.mac}`;
+                    } else if (evt.type === 'leave') {
+                        icon = '📵';
+                        color = '#9e9e9e';
+                        description = `Device left: ${evt.device.hostname || evt.device.ip || evt.device.mac}`;
+                    } else if (evt.type === 'change') {
+                        icon = '✏️';
+                        color = '#9c27b0';
+                        description = `Device changed: ${evt.after.hostname || evt.after.ip}`;
+                    }
+                    
+                    html += `
+                        <div style="padding: 8px; border-bottom: 1px solid #eee; display: flex; gap: 8px;">
+                            <span style="font-size: 1.2em;">${icon}</span>
+                            <div style="flex: 1;">
+                                <div style="color: ${color}; font-weight: 500;">${description}</div>
+                                <div class="muted" style="font-size: 0.85em;">${date}</div>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                eventsList.innerHTML = html;
+            } catch (e) {
+                eventsList.innerHTML = '<p class="muted">Failed to load events.</p>';
+            }
+        }
+
+        function closeEventsModal() {
+            document.getElementById("eventsModal").style.display = "none";
         }
 
         function connect() {
@@ -364,12 +460,24 @@
                     } else {
                         scanEl.classList.remove("active");
                     }
+                } else if (m.type === "events") {
+                    // Show notification for new events
+                    for (const evt of m.events) {
+                        if (evt.type === 'new_device') {
+                            console.log('New device:', evt.device);
+                            // Could add browser notification here
+                        } else if (evt.type === 'ip_change') {
+                            console.log('IP change:', evt.oldIp, '->', evt.newIp);
+                        }
+                    }
                 }
             };
         }
 
         connect();
         modal.onclick = (e) => { if (e.target === modal) closeModal(); };
+        const eventsModal = document.getElementById("eventsModal");
+        eventsModal.onclick = (e) => { if (e.target === eventsModal) closeEventsModal(); };
     </script>
 </body>
 
