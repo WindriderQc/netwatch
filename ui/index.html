@@ -254,6 +254,17 @@
         const modal = document.getElementById("editModal");
         const showOfflineCb = document.getElementById("showOffline");
 
+        // HTML escape function to prevent XSS
+        function escapeHtml(unsafe) {
+            if (unsafe == null || unsafe === '') return '';
+            return String(unsafe)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
         showOfflineCb.onchange = (e) => {
             showOffline = e.target.checked;
             render();
@@ -283,24 +294,24 @@
                 tr.innerHTML = `
       <td>
         <div style="display:flex; align-items:center; gap:8px">
-            <div style="width:8px; height:8px; border-radius:50%; background-color:${d.status === 'offline' ? '#ccc' : '#4caf50'}" title="${d.status}"></div>
+            <div style="width:8px; height:8px; border-radius:50%; background-color:${d.status === 'offline' ? '#ccc' : '#4caf50'}" title="${escapeHtml(d.status)}"></div>
             <div>
-                <div style="font-weight:500">${primaryName}</div>
-                <div class="muted">${secondaryName}</div>
+                <div style="font-weight:500">${escapeHtml(primaryName)}</div>
+                <div class="muted">${escapeHtml(secondaryName)}</div>
             </div>
         </div>
       </td>
       <td>
-        ${d.purpose ? `<div style="font-weight:500; color:#1976d2; margin-bottom:4px">${d.purpose}</div>` : ""}
-        ${d.type ? `<span class="tag tag-blue">${d.type}</span>` : ""}
-        ${d.location ? `<span class="tag tag-green">${d.location}</span>` : ""}
-        ${d.os ? `<div class="muted small" style="margin-top:4px">OS: ${d.os}</div>` : ""}
-        ${d.vendor ? `<div class="muted small">${d.vendor}</div>` : ""}
-        ${d.httpTitle ? `<div class="muted small" style="font-style:italic">"${d.httpTitle}"</div>` : ""}
+        ${d.purpose ? `<div style="font-weight:500; color:#1976d2; margin-bottom:4px">${escapeHtml(d.purpose)}</div>` : ""}
+        ${d.type ? `<span class="tag tag-blue">${escapeHtml(d.type)}</span>` : ""}
+        ${d.location ? `<span class="tag tag-green">${escapeHtml(d.location)}</span>` : ""}
+        ${d.os ? `<div class="muted small" style="margin-top:4px">OS: ${escapeHtml(d.os)}</div>` : ""}
+        ${d.vendor ? `<div class="muted small">${escapeHtml(d.vendor)}</div>` : ""}
+        ${d.httpTitle ? `<div class="muted small" style="font-style:italic">"${escapeHtml(d.httpTitle)}"</div>` : ""}
       </td>
       <td>
-        <div>${d.ip || ""}</div>
-        <div class="muted" style="font-family:monospace">${d.mac || ""}</div>
+        <div>${escapeHtml(d.ip || "")}</div>
+        <div class="muted" style="font-family:monospace">${escapeHtml(d.mac || "")}</div>
         ${d.ipHistory && d.ipHistory.length > 1 ? `<div class="muted small" style="margin-top:4px" title="IP History">${d.ipHistory.length} IPs tracked</div>` : ""}
       </td>
       <td class="muted">
@@ -382,7 +393,8 @@
                 }
                 
                 let html = '';
-                for (const evt of events.reverse()) {
+                // Use slice().reverse() to avoid mutating the original array
+                for (const evt of events.slice().reverse()) {
                     const date = new Date(evt.ts).toLocaleString();
                     let icon = '•';
                     let color = '#666';
@@ -391,23 +403,28 @@
                     if (evt.type === 'new_device') {
                         icon = '🆕';
                         color = '#4caf50';
-                        description = `New device discovered: ${evt.device.hostname || evt.device.ip || evt.device.mac}`;
+                        description = `New device discovered: ${escapeHtml(evt.device.hostname || evt.device.ip || evt.device.mac)}`;
                     } else if (evt.type === 'ip_change') {
                         icon = '🔄';
                         color = '#ff9800';
-                        description = `IP changed from ${evt.oldIp} to ${evt.newIp} (${evt.device.hostname || evt.device.mac})`;
+                        description = `IP changed from ${escapeHtml(evt.oldIp)} to ${escapeHtml(evt.newIp)} (${escapeHtml(evt.device.hostname || evt.device.mac)})`;
                     } else if (evt.type === 'join') {
                         icon = '📶';
                         color = '#2196f3';
-                        description = `Device joined: ${evt.device.hostname || evt.device.ip || evt.device.mac}`;
+                        description = `Device joined: ${escapeHtml(evt.device.hostname || evt.device.ip || evt.device.mac)}`;
                     } else if (evt.type === 'leave') {
                         icon = '📵';
                         color = '#9e9e9e';
-                        description = `Device left: ${evt.device.hostname || evt.device.ip || evt.device.mac}`;
+                        description = `Device left: ${escapeHtml(evt.device.hostname || evt.device.ip || evt.device.mac)}`;
                     } else if (evt.type === 'change') {
                         icon = '✏️';
                         color = '#9c27b0';
-                        description = `Device changed: ${evt.after.hostname || evt.after.ip}`;
+                        description = `Device changed: ${escapeHtml(evt.after.hostname || evt.after.ip)}`;
+                    } else {
+                        // Default case for unknown event types
+                        icon = '❓';
+                        color = '#666';
+                        description = `Unknown event type: ${escapeHtml(evt.type)}`;
                     }
                     
                     html += `
@@ -415,7 +432,7 @@
                             <span style="font-size: 1.2em;">${icon}</span>
                             <div style="flex: 1;">
                                 <div style="color: ${color}; font-weight: 500;">${description}</div>
-                                <div class="muted" style="font-size: 0.85em;">${date}</div>
+                                <div class="muted" style="font-size: 0.85em;">${escapeHtml(date)}</div>
                             </div>
                         </div>
                     `;
@@ -461,15 +478,8 @@
                         scanEl.classList.remove("active");
                     }
                 } else if (m.type === "events") {
-                    // Show notification for new events
-                    for (const evt of m.events) {
-                        if (evt.type === 'new_device') {
-                            console.log('New device:', evt.device);
-                            // Could add browser notification here
-                        } else if (evt.type === 'ip_change') {
-                            console.log('IP change:', evt.oldIp, '->', evt.newIp);
-                        }
-                    }
+                    // Events received - they're already stored on the server
+                    // Future enhancement: could add browser notifications here
                 }
             };
         }
