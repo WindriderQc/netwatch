@@ -191,10 +191,9 @@
         <table>
             <thead>
                 <tr>
-                    <th>Device</th>
-                    <th>Purpose / Details</th>
-                    <th>Network</th>
-                    <th>Last Seen</th>
+                    <th style="width:25%">Device</th>
+                    <th style="width:35%">Purpose / Details</th>
+                    <th style="width:40%">Network</th>
                 </tr>
             </thead>
             <tbody id="rows"></tbody>
@@ -288,8 +287,8 @@
                 const tr = document.createElement("tr");
                 tr.onclick = () => openModal(d);
 
-                const primaryName = d.alias || d.hostname || d.vendor || d.mac || d.ip;
-                const secondaryName = d.alias ? (d.hostname || d.ip) : (d.hostname ? d.ip : "");
+                const primaryName = d.alias || d.hostname || d.vendor || d.ip;
+                const secondaryName = d.alias ? (d.hostname || "") : "";
 
                 tr.innerHTML = `
       <td>
@@ -310,12 +309,8 @@
         ${d.httpTitle ? `<div class="muted small" style="font-style:italic">"${escapeHtml(d.httpTitle)}"</div>` : ""}
       </td>
       <td>
-        <div>${escapeHtml(d.ip || "")}</div>
-        <div class="muted" style="font-family:monospace">${escapeHtml(d.mac || "")}</div>
-        ${d.ipHistory && d.ipHistory.length > 1 ? `<div class="muted small" style="margin-top:4px" title="IP History">${d.ipHistory.length} IPs tracked</div>` : ""}
-      </td>
-      <td class="muted">
-        ${timeAgo(d.lastSeen)}
+        <div style="font-weight:500">${escapeHtml(d.ip || "")}</div>
+        <div class="muted" style="font-family:monospace; font-size:0.85em">${escapeHtml(d.mac || "")}</div>
       </td>
     `;
 
@@ -379,19 +374,19 @@
             const eventsModal = document.getElementById("eventsModal");
             const eventsList = document.getElementById("eventsList");
             eventsModal.style.display = "flex";
-            
+
             eventsList.innerHTML = '<p class="muted">Loading events...</p>';
-            
+
             try {
                 const response = await fetch("/api/events?limit=50");
                 const data = await response.json();
                 const events = data.events || [];
-                
+
                 if (events.length === 0) {
                     eventsList.innerHTML = '<p class="muted">No events recorded yet.</p>';
                     return;
                 }
-                
+
                 let html = '';
                 // Use slice().reverse() to avoid mutating the original array
                 for (const evt of events.slice().reverse()) {
@@ -399,7 +394,7 @@
                     let icon = '•';
                     let color = '#666';
                     let description = '';
-                    
+
                     if (evt.type === 'new_device') {
                         icon = '🆕';
                         color = '#4caf50';
@@ -426,7 +421,7 @@
                         color = '#666';
                         description = `Unknown event type: ${escapeHtml(evt.type)}`;
                     }
-                    
+
                     html += `
                         <div style="padding: 8px; border-bottom: 1px solid #eee; display: flex; gap: 8px;">
                             <span style="font-size: 1.2em;">${icon}</span>
@@ -437,7 +432,7 @@
                         </div>
                     `;
                 }
-                
+
                 eventsList.innerHTML = html;
             } catch (e) {
                 eventsList.innerHTML = '<p class="muted">Failed to load events.</p>';
